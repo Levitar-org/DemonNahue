@@ -731,6 +731,37 @@
   box-shadow: var(--shadow-lg);
 }
 
+.kanban-item.finalized {
+  opacity: 0.7;
+}
+
+.btn-finalize,
+.personal-btn-finalize {
+  font-size: 10px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.btn-finalize:hover,
+.personal-btn-finalize:hover {
+  opacity: 0.85;
+}
+
+.finalized-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--success);
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
 /* Calendar */
 .calendar {
   background: var(--surface);

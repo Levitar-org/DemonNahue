@@ -12,17 +12,17 @@ const STORES = [
 const PROFILE_KEY = 'levitar_profile';
 
 const XP_REWARDS = {
-  easy: 10,
-  medium: 25,
-  hard: 50,
-  epic: 100,
-  task_complete: 10,
-  project_complete: 250,
-  objective_complete: 500,
-  goal_complete: 1000,
+  easy: 15,
+  medium: 35,
+  hard: 80,
+  epic: 160,
+  task_complete: 15,
+  project_complete: 350,
+  objective_complete: 750,
+  goal_complete: 1500,
   vision_complete: 5000,
-  streak_7: 200,
-  streak_30: 1000
+  streak_7: 300,
+  streak_30: 1500
 };
 
 function getDefaultProfile() {
@@ -33,7 +33,7 @@ function getDefaultProfile() {
     topics: [],
     purpose: [],
     onboardingComplete: false,
-    level: 1,
+    level: 0,
     xp: 0,
     streak: 0,
     lastActivityDate: null,
@@ -68,11 +68,11 @@ export const PURPOSES = [
 ];
 
 function calculateLevel(xp) {
-  return Math.floor(Math.sqrt(xp / 100));
+  return Math.floor(Math.pow(xp / 100, 0.48));
 }
 
 function xpForLevel(level) {
-  return (level ** 2) * 100;
+  return Math.floor(100 * Math.pow(level, 2.08));
 }
 
 export const DB = {
@@ -440,6 +440,26 @@ export const DB = {
     return this.update('tasks', taskId, { status: 'todo', completedAt: null });
   },
 
+  finalizeTask(taskId) {
+    const task = this.getById('tasks', taskId);
+    if (!task || task.status !== 'done') return null;
+
+    const updated = this.update('tasks', taskId, {
+      status: 'finalized',
+      finalizedAt: new Date().toISOString()
+    });
+
+    this._awardXP(XP_REWARDS.task_complete);
+    this._updateStreak();
+    this.createHistoryEntry('finalize', 'task', taskId, {
+      projectId: task.projectId,
+      workspace: task.workspace || 'client',
+      name: task.title
+    });
+
+    return updated;
+  },
+
   // ─── GAMIFICATION ───
 
   getProfile() {
@@ -511,13 +531,13 @@ export const DB = {
   getXPToNextLevel() {
     const profile = this.getProfile();
     const level = profile.level || 0;
-    const currentLevelXp = (level ** 2) * 100;
-    const nextLevelXp = ((level + 1) ** 2) * 100;
+    const currentLevelXp = xpForLevel(level);
+    const nextLevelXp = xpForLevel(level + 1);
     return {
       current: profile.xp - currentLevelXp,
       needed: nextLevelXp - currentLevelXp,
       total: nextLevelXp - currentLevelXp,
-      percent: Math.round(((profile.xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100)
+      percent: Math.max(0, Math.round(((profile.xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100))
     };
   },
 
@@ -543,12 +563,12 @@ export const DB = {
 
   getTasksDueToday() {
     const today = new Date().toISOString().split('T')[0];
-    return this._getStore('tasks').filter(t => t.dueDate && t.dueDate === today && t.status !== 'done');
+    return this._getStore('tasks').filter(t => t.dueDate && t.dueDate === today && t.status !== 'done' && t.status !== 'finalized');
   },
 
   getTasksOverdue() {
     const today = new Date().toISOString().split('T')[0];
-    return this._getStore('tasks').filter(t => t.dueDate && t.dueDate < today && t.status !== 'done');
+    return this._getStore('tasks').filter(t => t.dueDate && t.dueDate < today && t.status !== 'done' && t.status !== 'finalized');
   },
 
   getTasksUpcoming(days = 7) {
@@ -558,7 +578,7 @@ export const DB = {
     const todayStr = today.toISOString().split('T')[0];
     const futureStr = future.toISOString().split('T')[0];
     return this._getStore('tasks').filter(t =>
-      t.dueDate && t.dueDate >= todayStr && t.dueDate <= futureStr && t.status !== 'done'
+      t.dueDate && t.dueDate >= todayStr && t.dueDate <= futureStr && t.status !== 'done' && t.status !== 'finalized'
     );
   },
 
@@ -681,6 +701,94 @@ export const DB = {
     const total = missions.length;
     const percent = total > 0 ? Math.round((done / total) * 100) : 0;
     return { done, total, percent };
+  },
+
+  // ─── DAILY CHECK-IN ───
+
+  isTodayCheckedIn() {
+    const today = new Date().toISOString().split('T')[0];
+    const raw = localStorage.getItem('levitar_checkin');
+    if (!raw) return false;
+    try {
+      const data = JSON.parse(raw);
+      return data.log && data.log.includes(today);
+    } catch { return false; }
+  },
+
+  performCheckIn() {
+    const today = new Date().toISOString().split('T')[0];
+    let raw = localStorage.getItem('levitar_checkin');
+    let data;
+    if (raw) {
+      try { data = JSON.parse(raw); } catch { data = null; }
+    }
+    if (!data || !data.log) data = { log: [], streak: 0 };
+
+    if (data.log.includes(today)) return null;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    if (data.log.length > 0 && data.log[data.log.length - 1] === yesterdayStr) {
+      data.streak += 1;
+    } else if (data.log.length > 0 && data.log[data.log.length - 1] !== today) {
+      data.streak = 1;
+    } else if (data.log.length === 0) {
+      data.streak = 1;
+    }
+
+    data.log.push(today);
+    localStorage.setItem('levitar_checkin', JSON.stringify(data));
+
+    const profile = this.getProfile();
+    const xpInfo = this.getXPToNextLevel();
+    const baseXP = Math.max(10, Math.floor(xpInfo.total * 0.10));
+    let bonus = 0;
+    if (data.streak > 0 && data.streak % 3 === 0) {
+      bonus = Math.floor(baseXP * 0.20);
+    }
+    const totalXP = baseXP + bonus;
+
+    this._awardXP(totalXP);
+
+    return {
+      xp: baseXP,
+      bonus,
+      total: totalXP,
+      streak: data.streak,
+      level: profile.level
+    };
+  },
+
+  getCheckInData() {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+
+    const raw = localStorage.getItem('levitar_checkin');
+    let log = [];
+    if (raw) {
+      try { const d = JSON.parse(raw); log = d.log || []; } catch { log = []; }
+    }
+
+    const DAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      week.push({
+        date: dateStr,
+        dayName: DAY_LABELS[d.getDay()],
+        checkedIn: log.includes(dateStr),
+        isToday: dateStr === today.toISOString().split('T')[0]
+      });
+    }
+
+    return week;
   },
 
   // ─── READY ───

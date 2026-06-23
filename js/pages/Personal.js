@@ -156,7 +156,7 @@ export function PersonalPage(initialTab) {
         </div>
         <div class="kanban-board">
           ${columns.map(col => {
-            const colTasks = tasks.filter(t => t.status === col);
+            const colTasks = tasks.filter(t => t.status === col || (col === 'done' && (t.status === 'done' || t.status === 'finalized')));
             return `
               <div class="kanban-column" data-status="${col}">
                 <div class="kanban-column-header"><span>${colLabels[col]}</span><span class="kanban-count">${colTasks.length}</span></div>
@@ -166,13 +166,17 @@ export function PersonalPage(initialTab) {
                     const diff = t.difficulty || 'medium';
                     const diffXp = { easy: 10, medium: 25, hard: 50, epic: 100 }[diff];
                     return `
-                    <div class="kanban-item" draggable="true" data-task-id="${t.id}">
+                    <div class="kanban-item ${t.status === 'finalized' ? 'finalized' : ''}" draggable="${t.status !== 'finalized'}" data-task-id="${t.id}">
                       <div class="kanban-item-title">${Utils.sanitize(t.title)}</div>
                       ${obj ? `<div class="kanban-item-obj"><span class="objective-dot objective-${obj.status}"></span>${Utils.truncate(Utils.sanitize(obj.title), 30)}</div>` : ''}
                       ${t.description ? `<div class="kanban-item-desc">${Utils.truncate(Utils.sanitize(t.description), 50)}</div>` : ''}
                       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
                         <span style="font-size:10px;color:var(--accent);font-weight:600">+${diffXp} XP</span>
-                        <button class="btn btn-sm btn-ghost personal-task-del-btn" data-id="${t.id}">✕</button>
+                        <div style="display:flex;gap:6px;align-items:center">
+                          ${t.status === 'done' ? `<button class="btn btn-sm personal-btn-finalize" data-id="${t.id}">✓ Finalizar</button>` : ''}
+                          ${t.status === 'finalized' ? `<span class="finalized-badge">✓ Finalizado</span>` : ''}
+                          <button class="btn btn-sm btn-ghost personal-task-del-btn" data-id="${t.id}">✕</button>
+                        </div>
                       </div>
                     </div>
                   `;
@@ -390,6 +394,9 @@ export function PersonalPage(initialTab) {
 
         document.querySelectorAll('.personal-task-del-btn').forEach(el => {
           el.addEventListener('click', (e) => { e.stopPropagation(); DB.remove('tasks', el.dataset.id); reRender(); });
+        });
+        document.querySelectorAll('.personal-btn-finalize').forEach(el => {
+          el.addEventListener('click', (e) => { e.stopPropagation(); DB.finalizeTask(el.dataset.id); reRender(); });
         });
         document.querySelectorAll('.personal-note-del-btn').forEach(el => {
           el.addEventListener('click', (e) => { e.stopPropagation(); DB.remove('notes', el.dataset.id); reRender(); });

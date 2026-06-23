@@ -333,6 +333,7 @@
 .widget-bullet.todo { background: var(--warning); }
 .widget-bullet.in_progress { background: var(--accent); }
 .widget-bullet.done { background: var(--success); }
+.widget-bullet.finalized { background: var(--success); opacity: 0.5; }
 
 .widget-date {
   font-size: var(--text-xs);

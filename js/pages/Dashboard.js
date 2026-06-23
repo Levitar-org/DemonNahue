@@ -21,11 +21,12 @@ export function DashboardPage() {
     const xpInfo = DB.getXPToNextLevel();
 
     const activeProjects = projects.filter(p => !p.archived && p.status === 'active');
-    const pendingTasks = tasks.filter(t => t.status !== 'done');
+    const pendingTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress');
     const todayTasks = DB.getTasksDueToday();
+    const finalizedTasks = tasks.filter(t => t.status === 'finalized').sort((a, b) => new Date(b.finalizedAt || b.createdAt) - new Date(a.finalizedAt || a.createdAt));
 
     return {
-      profile, xpInfo, activeProjects, pendingTasks, todayTasks,
+      profile, xpInfo, activeProjects, pendingTasks, todayTasks, finalizedTasks,
       recentHistory: history.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5),
       tasks, projects, events
     };
@@ -95,6 +96,10 @@ export function DashboardPage() {
               <div class="kpi-card-value">${d.todayTasks.length}</div>
               <div class="kpi-card-label">Vencen hoy</div>
             </div>
+            <div class="kpi-card">
+              <div class="kpi-card-value">${d.finalizedTasks.length}</div>
+              <div class="kpi-card-label">Finalizadas</div>
+            </div>
           </div>
 
           <div class="dashboard-grid">
@@ -138,6 +143,22 @@ export function DashboardPage() {
                 </div>
               `).join('') : empty('Sin actividad reciente')}
             `, 'history-widget')}
+
+            ${widget('Últimas finalizadas', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>', `
+              ${d.finalizedTasks.length > 0 ? d.finalizedTasks.slice(0, 5).map(t => {
+                const proj = t.projectId ? DB.getById('projects', t.projectId) : null;
+                return `
+                  <div class="widget-item">
+                    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                      <span class="widget-bullet finalized"></span>
+                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.truncate(Utils.sanitize(t.title), 35)}</span>
+                      ${proj ? `<span style="font-size:var(--text-xs);color:var(--text-muted);flex-shrink:0">· ${Utils.sanitize(proj.name)}</span>` : ''}
+                    </div>
+                    <span style="font-size:var(--text-xs);color:var(--text-muted);flex-shrink:0">${Utils.getRelativeTime(t.finalizedAt || t.createdAt)}</span>
+                  </div>
+                `;
+              }).join('') : empty('Aún no hay tareas finalizadas')}
+            `, 'finalized-widget')}
           </div>
         </div>
       `;
